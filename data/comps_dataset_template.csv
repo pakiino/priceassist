@@ -1,0 +1,9 @@
+model,storage_variant,completeness,price_usd,source_url,date_collected,notes
+Steam Deck OLED,512GB,Loose,647.50,https://www.pricecharting.com/game/pc-games/steam-deck-512gb-oled-edition,2026-08-28,AI-FETCHED - verify against live page before trusting
+Steam Deck OLED,512GB,CIB,710.20,https://www.pricecharting.com/game/pc-games/steam-deck-512gb-oled-edition,2026-08-28,AI-FETCHED - verify against live page before trusting
+Steam Deck OLED,1TB,Loose,712.25,https://www.pricecharting.com/game/pc-games/steam-deck-1tb-oled-edition,2026-08-28,AI-FETCHED - verify against live page before trusting
+Steam Deck OLED,1TB,CIB,782.48,https://www.pricecharting.com/game/pc-games/steam-deck-1tb-oled-edition,2026-08-28,AI-FETCHED - verify against live page before trusting
+Nintendo Switch OLED - Tears of the Kingdom Edition,standard,Loose,214.98,https://www.pricecharting.com/game/nintendo-switch/nintendo-switch-oled-zelda-tears-of-the-kingdom-edition,2026-08-28,AI-FETCHED - verify against live page before trusting; corrected to match PK's actual unit (special edition, not plain)
+Nintendo Switch OLED - Tears of the Kingdom Edition,standard,CIB,255.26,https://www.pricecharting.com/game/nintendo-switch/nintendo-switch-oled-zelda-tears-of-the-kingdom-edition,2026-08-28,AI-FETCHED - verify against live page before trusting; corrected to match PK's actual unit (special edition, not plain)
+New Nintendo 3DS XL - Hyrule Edition,standard,Loose,488.63,https://www.pricecharting.com/game/nintendo-3ds/new-nintendo-3ds-xl-hyrule-edition,2026-08-28,AI-FETCHED - verify against live page before trusting; swapped in for Switch 2 per PK's decision
+New Nintendo 3DS XL - Hyrule Edition,standard,CIB,761.71,https://www.pricecharting.com/game/nintendo-3ds/new-nintendo-3ds-xl-hyrule-edition,2026-08-28,AI-FETCHED - verify against live page before trusting; swapped in for Switch 2 per PK's decision
