@@ -1,0 +1,8 @@
+# real API key — never commit this, only api_key.example.txt is tracked
+api_key.txt
+
+# standard Python noise
+__pycache__/
+*.pyc
+.env
+venv/
