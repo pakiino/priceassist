@@ -1,8 +1,9 @@
 import os
+import pandas as pd
 import streamlit as st
 from google import genai
 from google.genai import types
-from pricing import get_price_stats
+from pricing import get_price_stats, get_recent_listings
 
 st.title("Resale Price Assistant")
 
@@ -14,6 +15,28 @@ KNOWN_ITEMS = [
     "Nintendo Switch OLED - Tears of the Kingdom Edition",
     "New Nintendo 3DS XL - Hyrule Edition",
 ]
+
+# Real eBay active-listing snapshot (manually collected Aug 28 2026, not
+# live). Used only when the user picks "Active eBay listings average" below
+# -- otherwise it's reference/context only.
+active_listings_df = pd.read_csv("data/active_listings_reference.csv")
+
+
+def get_active_listing_stats(item, storage_variant):
+    """Average/min/max computed from ALL matching active-listing rows.
+    Not filtered by completeness -- this dataset only has a condition_label
+    (New/Open-box/Pre-owned), not the Loose/CIB scale the sold data uses.
+    Tends to run higher than sold-data stats, since overpriced items that
+    haven't sold yet stay visible on eBay longer than fairly-priced ones.
+    """
+    matches = active_listings_df[
+        (active_listings_df["item"] == item)
+        & (active_listings_df["storage_variant"] == storage_variant)
+    ]
+    if matches.empty:
+        return None
+    return matches["price_usd"].mean(), matches["price_usd"].min(), matches["price_usd"].max()
+
 
 # --- API key: environment variable for local dev, sidebar input as the
 #     documented fallback for anyone else running this app ---
@@ -52,15 +75,24 @@ if uploaded_file is not None:
             "functions correctly -- that cannot be determined from a photo."
         )
 
-        response = client.models.generate_content(
-            model="gemini-3.5-flash",
-            contents=[image_part, prompt_text],
-        )
+        try:
+            response = client.models.generate_content(
+                model="gemini-3.5-flash",
+                contents=[image_part, prompt_text],
+            )
+        except Exception:
+            st.error("Could not reach Gemini right now -- you may have run out of your daily Gemini API quota. Try again later.")
+            st.stop()
 
         item_name, _, description = response.text.partition("\n")
         st.session_state["identified_name"] = item_name.strip()
         st.session_state["identified_description"] = description.strip()
         st.session_state["uploaded_signature"] = file_signature
+
+        # Reset the detail selections too, so a new photo never inherits a
+        # stale storage/completeness choice left over from a previous item.
+        st.session_state["storage_variant_widget"] = "512GB"
+        st.session_state["completeness_widget"] = "Loose"
 
     st.subheader("Step 1: Confirm identification")
 
@@ -79,20 +111,78 @@ if uploaded_file is not None:
     st.subheader("Step 2: Confirm details")
 
     if confirmed_name == "Steam Deck OLED":
-        storage_variant = st.selectbox("Storage", ["512GB", "1TB"])
+        storage_variant = st.selectbox("Storage", ["512GB", "1TB"], key="storage_variant_widget")
     else:
         storage_variant = "standard"
 
-    completeness = st.radio("Completeness", ["Loose", "CIB"])
-    accessory_notes = st.text_area("Accessory notes (optional)", placeholder="e.g. missing charger, includes extra Joy-Con")
+    completeness = st.radio("Completeness", ["Loose", "CIB"], key="completeness_widget")
+    included_accessories = st.multiselect(
+        "Included accessories",
+        ["Charger / AC adapter", "Carrying case", "SD card", "Extra controller / Joy-Con"],
+    )
+    other_accessory_notes = st.text_area(
+        "Other notes (optional)",
+        placeholder="e.g. missing charger, includes rare box art",
+    )
+    accessory_notes = ", ".join(
+        included_accessories + ([other_accessory_notes] if other_accessory_notes else [])
+    )
 
     # --- Step C: price lookup ---
     st.subheader("Step 3: Price")
-    median_price, min_price, max_price = get_price_stats(confirmed_name, storage_variant, completeness)
+    pricing_basis = st.radio(
+        "Pricing basis",
+        ["Sold data (recommended)", "Active eBay listings average"],
+        help=(
+            "Sold data reflects what similar items actually sold for. "
+            "Active listings tend to run higher, since overpriced items "
+            "that haven't sold yet stay visible longer than ones that "
+            "sold quickly -- and this dataset isn't split by Loose/CIB."
+        ),
+    )
+
+    if pricing_basis == "Active eBay listings average":
+        active_stats = get_active_listing_stats(confirmed_name, storage_variant)
+        if active_stats is None:
+            st.warning("No active-listing data for this item/variant -- using sold data instead.")
+            median_price, min_price, max_price = get_price_stats(confirmed_name, storage_variant, completeness)
+        else:
+            median_price, min_price, max_price = active_stats
+    else:
+        # Sold-data mode still computes the median internally (more robust
+        # to outliers than a mean) -- only the displayed label is unified
+        # to "Average" so both pricing modes read the same way in the UI.
+        median_price, min_price, max_price = get_price_stats(confirmed_name, storage_variant, completeness)
+
     price_col1, price_col2, price_col3 = st.columns(3)
-    price_col1.metric("Median", f"${median_price:.2f}")
-    price_col2.metric("Min", f"${min_price:.2f}")
+    price_col1.metric("Min", f"${min_price:.2f}")
+    price_col2.metric("Average", f"${median_price:.2f}")
     price_col3.metric("Max", f"${max_price:.2f}")
+
+    with st.expander("See the individual listings used for this price (click a column to sort)"):
+        recent_listings = get_recent_listings(confirmed_name, storage_variant, completeness).copy()
+        recent_listings = recent_listings.sort_values("price_usd")
+        source_page = recent_listings["source_url"].iloc[0] if not recent_listings.empty else None
+        if source_page:
+            st.caption(f"Source for all rows below: [{source_page}]({source_page})")
+        st.dataframe(
+            recent_listings[["date", "price_usd"]],
+            hide_index=True,
+        )
+
+    with st.expander("See current eBay active listings for this item (real eBay data, snapshot from Aug 28 2026 -- not live, reference only, not used in the price calculation)"):
+        matching_active = active_listings_df[
+            (active_listings_df["item"] == confirmed_name)
+            & (active_listings_df["storage_variant"] == storage_variant)
+        ].copy()
+        if matching_active.empty:
+            st.write("No active-listing snapshot data for this item/variant.")
+        else:
+            matching_active = matching_active.sort_values("price_usd")
+            st.dataframe(
+                matching_active[["price_usd", "condition_label", "title"]],
+                hide_index=True,
+            )
 
     # --- Step D: urgency presets + editable price ---
     st.subheader("Step 4: Set your price")
@@ -115,8 +205,8 @@ if uploaded_file is not None:
 
     final_price = st.number_input("Your listing price ($)", key="price", step=1.0)
 
-    pct_vs_median = (final_price - median_price) / median_price * 100
-    st.caption(f"{pct_vs_median:+.1f}% vs. median")
+    pct_vs_average = (final_price - median_price) / median_price * 100
+    st.caption(f"{pct_vs_average:+.1f}% vs. average")
 
     # --- Step E: generate final listing (title + description) ---
     st.subheader("Step 5: Generate listing")
@@ -135,10 +225,14 @@ if uploaded_file is not None:
             "Do not invent details not provided above, and do not mention the exact price "
             "in the description -- it is shown separately."
         )
-        listing_response = client.models.generate_content(
-            model="gemini-3.5-flash",
-            contents=[listing_prompt],
-        )
+        try:
+            listing_response = client.models.generate_content(
+                model="gemini-3.5-flash",
+                contents=[listing_prompt],
+            )
+        except Exception:
+            st.error("Could not reach Gemini right now -- you may have run out of your daily Gemini API quota. Try again later.")
+            st.stop()
         listing_title, _, listing_description = listing_response.text.partition("\n")
         st.session_state["listing_title"] = listing_title.strip()
         st.session_state["listing_description"] = listing_description.strip()
