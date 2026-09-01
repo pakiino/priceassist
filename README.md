@@ -30,7 +30,7 @@ to avoid unrealistic combined penalties.
 - pricing.py -- computes median/min/max price from sold-listing data
 - data/ -- raw_sold_listings_all.csv (sold listings used for pricing),
   active_listings_reference.csv (supporting evidence, not used in the price
-  calculation), comps_dataset_template.csv
+  calculation)
 - tests/ -- unit tests for pricing.py
 
 ## How to run -- Windows
@@ -92,6 +92,17 @@ to avoid unrealistic combined penalties.
    If `streamlit` isn't recognized, try instead: `python3 -m streamlit run main.py`
 
 6. A browser tab opens automatically at http://localhost:8501.
+
+## AI tools used in this project
+- **Google Gemini API** is a core part of the app itself, not just a dev
+  aid: it identifies the uploaded item and writes its condition description,
+  and separately generates the final listing title/description. This is
+  the project's central AI/ML capability (see "What this does" above).
+- **Claude** (Anthropic) was used throughout development for code
+  implementation, debugging, and design/architecture decisions.
+- **ChatGPT** was used to research and source the condition-adjustment
+  deduction percentages (see "Condition-adjustment methodology" above),
+  which cites the underlying sources used.
 
 ## How to run tests
     python -m unittest discover -s tests -p "test_*.py" -v
