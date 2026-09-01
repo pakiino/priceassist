@@ -16,6 +16,31 @@ KNOWN_ITEMS = [
     "New Nintendo 3DS XL - Hyrule Edition",
 ]
 
+# Condition-adjustment percentages below are heuristic estimates, not
+# published marketplace deduction schedules. Derived from repair/replacement
+# cost and functional-defect signals (iFixit part/repair data for Steam Deck
+# OLED screens, AC adapters, and thumbsticks; Nintendo's own Joy-Con drift
+# and physical-damage support pages; Swappa's listing-eligibility rules
+# excluding cracked/nonfunctional devices) plus added collector-condition
+# sensitivity for the special-edition Switch and 3DS XL. Applied
+# multiplicatively per defect, not stacked additively, to avoid unrealistic
+# combined penalties (e.g. -50% screen and -30% wear = base x 0.50 x 0.70,
+# not -80%).
+CONDITION_MULTIPLIERS = {
+    "Steam Deck OLED": {"screen": 0.60, "charger": 0.90, "drift": 0.85, "wear": 0.85},
+    "Nintendo Switch OLED - Tears of the Kingdom Edition": {"screen": 0.55, "charger": 0.90, "drift": 0.80, "wear": 0.80},
+    "New Nintendo 3DS XL - Hyrule Edition": {"screen": 0.50, "charger": 0.95, "drift": 0.80, "wear": 0.70},
+}
+
+# Item-specific drift terminology so the checkbox reads naturally for each
+# console (Steam Deck's analog sticks vs. detachable Joy-Con vs. the 3DS's
+# Circle Pad / C-Stick).
+DRIFT_LABELS = {
+    "Steam Deck OLED": "Analog stick drift",
+    "Nintendo Switch OLED - Tears of the Kingdom Edition": "Joy-Con drift",
+    "New Nintendo 3DS XL - Hyrule Edition": "Circle Pad / C-Stick drift or input fault",
+}
+
 # Real eBay active-listing snapshot (manually collected Aug 28 2026, not
 # live). Used only when the user picks "Active eBay listings average" below
 # -- otherwise it's reference/context only.
@@ -93,6 +118,9 @@ if uploaded_file is not None:
         # stale storage/completeness choice left over from a previous item.
         st.session_state["storage_variant_widget"] = "512GB"
         st.session_state["completeness_widget"] = "Loose"
+        st.session_state["broken_screen_widget"] = False
+        st.session_state["stick_drift_widget"] = False
+        st.session_state["heavy_wear_widget"] = False
 
     st.subheader("Step 1: Confirm identification")
 
@@ -145,19 +173,49 @@ if uploaded_file is not None:
         active_stats = get_active_listing_stats(confirmed_name, storage_variant)
         if active_stats is None:
             st.warning("No active-listing data for this item/variant -- using sold data instead.")
-            median_price, min_price, max_price = get_price_stats(confirmed_name, storage_variant, completeness)
+            base_median, base_min, base_max = get_price_stats(confirmed_name, storage_variant, completeness)
         else:
-            median_price, min_price, max_price = active_stats
+            base_median, base_min, base_max = active_stats
     else:
         # Sold-data mode still computes the median internally (more robust
         # to outliers than a mean) -- only the displayed label is unified
         # to "Average" so both pricing modes read the same way in the UI.
-        median_price, min_price, max_price = get_price_stats(confirmed_name, storage_variant, completeness)
+        base_median, base_min, base_max = get_price_stats(confirmed_name, storage_variant, completeness)
+
+    st.markdown("**Condition issues (optional)**")
+    st.caption(
+        "Estimated deductions based on typical repair/replacement costs and resale "
+        "market behavior -- not derived from this project's sold-listing data, since "
+        "that data isn't tagged by defect. Applied multiplicatively, not stacked "
+        "additively, to avoid unrealistic combined penalties."
+    )
+    cond_col1, cond_col2, cond_col3 = st.columns(3)
+    broken_screen = cond_col1.checkbox("Screen cracked/broken", key="broken_screen_widget")
+    stick_drift = cond_col2.checkbox(DRIFT_LABELS[confirmed_name], key="stick_drift_widget")
+    heavy_wear = cond_col3.checkbox("Heavy scratches/wear", key="heavy_wear_widget")
+    charger_missing = "Charger / AC adapter" not in included_accessories
+
+    multiplier_table = CONDITION_MULTIPLIERS[confirmed_name]
+    condition_multiplier = 1.0
+    if broken_screen:
+        condition_multiplier *= multiplier_table["screen"]
+    if stick_drift:
+        condition_multiplier *= multiplier_table["drift"]
+    if heavy_wear:
+        condition_multiplier *= multiplier_table["wear"]
+    if charger_missing:
+        condition_multiplier *= multiplier_table["charger"]
+
+    median_price = base_median * condition_multiplier
+    min_price = base_min * condition_multiplier
+    max_price = base_max * condition_multiplier
 
     price_col1, price_col2, price_col3 = st.columns(3)
     price_col1.metric("Min", f"${min_price:.2f}")
     price_col2.metric("Average", f"${median_price:.2f}")
     price_col3.metric("Max", f"${max_price:.2f}")
+    if condition_multiplier < 1.0:
+        st.caption(f"Includes a {(1 - condition_multiplier) * 100:.0f}% condition adjustment vs. base price of ${base_median:.2f}")
 
     with st.expander("See the individual listings used for this price (click a column to sort)"):
         recent_listings = get_recent_listings(confirmed_name, storage_variant, completeness).copy()
@@ -190,7 +248,7 @@ if uploaded_file is not None:
     # Reset the suggested price to this item's median whenever the
     # identified item/variant/completeness changes, so an old price from a
     # previous photo doesn't linger.
-    pricing_signature = (confirmed_name, storage_variant, completeness)
+    pricing_signature = (confirmed_name, storage_variant, completeness, condition_multiplier)
     if st.session_state.get("pricing_signature") != pricing_signature:
         st.session_state["price"] = median_price
         st.session_state["pricing_signature"] = pricing_signature
